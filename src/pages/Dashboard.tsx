@@ -46,7 +46,7 @@ export default function Dashboard() {
             if (maxArea) url += "&max_area=" + maxArea;
             if (confidence) url += "&semantic_confidence=" + confidence;
             
-            const res = await fetch(url);
+            const res = await fetch(url, { headers: { "ngrok-skip-browser-warning": "true" } });
             const data = await res.json();
             if (data && data.results && Array.isArray(data.results)) {
                 setResults(data.results);
@@ -323,5 +323,6 @@ export default function Dashboard() {
         </div>
     );
 }
+
 
 
