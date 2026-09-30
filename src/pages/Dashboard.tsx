@@ -32,7 +32,8 @@ export default function Dashboard() {
     const [maxArea, setMaxArea] = useState('');
     const [confidence, setConfidence] = useState('');
     
-    const API_URL = import.meta.env.VITE_API_BASE_URL || 'http://localhost:8000';
+    const rawUrl = import.meta.env.VITE_API_BASE_URL || 'http://localhost:8000';
+    const API_URL = rawUrl.replace(/\/$/, '');
 
     useEffect(() => {
         api.getHealth().then(() => setStatus('Operational')).catch(() => setStatus('Offline'));
@@ -323,6 +324,7 @@ export default function Dashboard() {
         </div>
     );
 }
+
 
 
 

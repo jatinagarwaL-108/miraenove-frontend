@@ -1,7 +1,8 @@
 ﻿import axios from 'axios';
 import { EventResult } from '../types/event';
 
-const API_URL = (import.meta.env.VITE_API_BASE_URL || 'http://localhost:8000') + '/api';
+const rawUrl = import.meta.env.VITE_API_BASE_URL || 'http://localhost:8000';
+const API_URL = rawUrl.replace(/\/$/, '') + '/api';
 
 export const api = {
     searchEvents: async (query: string): Promise<EventResult[]> => {
@@ -17,5 +18,6 @@ export const api = {
         return res.data;
     }
 };
+
 
 
