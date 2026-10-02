@@ -1,5 +1,6 @@
 import { useState, useEffect, useRef } from 'react';
 import { useParams, useNavigate } from 'react-router-dom';
+import Sidebar from '../components/Sidebar';
 import Map, { Source, Layer, MapRef } from 'react-map-gl/maplibre';
 import * as maplibregl from 'maplibre-gl';
 import 'maplibre-gl/dist/maplibre-gl.css';
@@ -26,13 +27,11 @@ export default function AnalysisPage() {
     const [error, setError] = useState(false);
     
     // Human Review State (Local Demo)
-    const [reviewStatus, setReviewStatus] = useState<any>(() => {
-        const saved = localStorage.getItem(`review_${eventId}`);
-        return saved ? JSON.parse(saved) : { status: 'Pending Human Review', decision: null, reason: '', timestamp: null };
-    });
+    const [reviewStatus, setReviewStatus] = useState<any>({ status: 'PENDING', decision: null, reason: '', timestamp: null });
     
     const [reviewAction, setReviewAction] = useState<string | null>(null);
     const [reviewReason, setReviewReason] = useState<string>('');
+    const [showExportMenu, setShowExportMenu] = useState(false);
     
     const activeTab = tab || 'overview';
     const API_URL = import.meta.env.VITE_API_BASE_URL || 'http://localhost:8000';
@@ -47,10 +46,7 @@ export default function AnalysisPage() {
                 setEvent(data);
                 
                 // Load local review
-                const saved = localStorage.getItem(`review_${data.event_id}`);
-                if (saved) {
-                    setReviewStatus(JSON.parse(saved));
-                }
+                api.getReview(data.event_id).then(rev => setReviewStatus(rev)).catch(() => {});
                 
                 setLoading(false);
             } catch (e) {
@@ -62,17 +58,21 @@ export default function AnalysisPage() {
         fetchEvent();
     }, [eventId, tab, navigate]);
 
-    const handleSaveReview = (decision: string) => {
+    const submitReview = () => {
+        if (!reviewAction) return;
+        const statusStr = reviewAction == 'ACCEPT' ? 'ACCEPTED' : reviewAction == 'REJECT' ? 'REJECTED' : 'UNCERTAIN';
+        
         const payload = {
-            status: decision === 'ACCEPT' ? 'Human Verified — Accepted' : decision === 'REJECT' ? 'Human Verified — Rejected' : 'Human Review — Uncertain',
-            decision,
+            status: statusStr,
             reason: reviewReason,
-            timestamp: new Date().toISOString(),
-            reviewer: 'Local Demo User'
+            notes: reviewReason,
+            reviewer: 'Demo Analyst'
         };
-        setReviewStatus(payload);
-        localStorage.setItem(`review_${eventId}`, JSON.stringify(payload));
-        setReviewAction(null);
+        api.postReview(eventId as string, payload).then(newStatus => {
+            setReviewStatus(newStatus);
+            setReviewAction(null);
+            setReviewReason('');
+        }).catch(err => alert("Failed to submit review: " + err));
     };
 
     const getBounds = (geometry: any) => {
@@ -93,6 +93,12 @@ export default function AnalysisPage() {
         
         processCoords(geometry.coordinates);
         return { minLng, minLat, maxLng, maxLat };
+    };
+
+    
+    const handleExport = (type: string) => {
+        window.open(`${API_URL}/api/events/${eventId}/export/${type}`, '_blank');
+        setShowExportMenu(false);
     };
 
     const handleZoomToChange = () => {
@@ -179,7 +185,7 @@ export default function AnalysisPage() {
                             </div>
                             <div style={{ padding: '20px', background: '#fff', border: '1px solid #eaeaea', borderRadius: '8px' }}>
                                 <div style={{ color: '#666', fontSize: '12px' }}>Validation Status</div>
-                                <div style={{ fontSize: '14px', fontWeight: 'bold', color: reviewStatus.status.includes('Accepted') ? '#16a34a' : reviewStatus.status.includes('Rejected') ? '#dc2626' : '#d97706', marginTop: '4px' }}>{reviewStatus.status}</div>
+                                <div style={{ fontSize: '14px', fontWeight: 'bold', color: (reviewStatus?.status || '').includes('Accepted') ? '#16a34a' : (reviewStatus?.status || '').includes('Rejected') ? '#dc2626' : '#d97706', marginTop: '4px' }}>{reviewStatus.status}</div>
                             </div>
                         </div>
                         <h3 style={{ margin: '0 0 15px 0', borderBottom: '1px solid #eaeaea', paddingBottom: '10px' }}>CHANGE SUMMARY</h3>
@@ -280,14 +286,14 @@ export default function AnalysisPage() {
                         </div>
                         <div style={{ display: 'flex', gap: '20px' }}>
                             <div style={{ flex: 1, background: '#fff', padding: '15px', border: '1px solid #eaeaea', borderRadius: '8px' }}>
-                                <div style={{ fontWeight: 'bold', marginBottom: '15px', textAlign: 'center', fontSize: '18px' }}>T1 — BEFORE<br/><span style={{ fontSize: '14px', color: '#666', fontWeight: 'normal' }}>{event.source.t1_date}</span></div>
+                                <div style={{ fontWeight: 'bold', marginBottom: '15px', textAlign: 'center', fontSize: '18px' }}>T1 &#8594; BEFORE<br/><span style={{ fontSize: '14px', color: '#666', fontWeight: 'normal' }}>{event.source.t1_date}</span><br/><span style={{ fontSize: '11px', color: '#64748b' }}>Enhanced for visualization</span></div>
                                 <div style={{ position: 'relative', width: '100%' }}>
                                     <img src={API_URL + event.visualization_references.t1_crop} style={{ width: '100%', borderRadius: '4px', border: '1px solid #ccc', objectFit: 'contain', background: '#000', display: 'block' }} onError={(e) => (e.currentTarget.parentElement as any).style.display = 'none'} />
                                     <div style={{ position: 'absolute', top: '15%', left: '15%', width: '70%', height: '70%', border: '3px dashed #ff0000', pointerEvents: 'none', boxShadow: '0 0 0 9999px rgba(0,0,0,0.3)' }}></div>
                                 </div>
                             </div>
                             <div style={{ flex: 1, background: '#fff', padding: '15px', border: '1px solid #eaeaea', borderRadius: '8px' }}>
-                                <div style={{ fontWeight: 'bold', marginBottom: '15px', textAlign: 'center', fontSize: '18px' }}>T2 — AFTER<br/><span style={{ fontSize: '14px', color: '#666', fontWeight: 'normal' }}>{event.source.t2_date}</span></div>
+                                <div style={{ fontWeight: 'bold', marginBottom: '15px', textAlign: 'center', fontSize: '18px' }}>T2 &#8594; AFTER<br/><span style={{ fontSize: '14px', color: '#666', fontWeight: 'normal' }}>{event.source.t2_date}</span><br/><span style={{ fontSize: '11px', color: '#64748b' }}>Enhanced for visualization</span></div>
                                 <div style={{ position: 'relative', width: '100%' }}>
                                     <img src={API_URL + event.visualization_references.t2_crop} style={{ width: '100%', borderRadius: '4px', border: '1px solid #ccc', objectFit: 'contain', background: '#000', display: 'block' }} onError={(e) => (e.currentTarget.parentElement as any).style.display = 'none'} />
                                     <div style={{ position: 'absolute', top: '15%', left: '15%', width: '70%', height: '70%', border: '3px dashed #ff0000', pointerEvents: 'none', boxShadow: '0 0 0 9999px rgba(0,0,0,0.3)' }}></div>
@@ -384,123 +390,127 @@ export default function AnalysisPage() {
             case 'review':
                 return (
                     <div style={{ padding: '30px' }}>
-                        <div style={{ marginBottom: '20px' }}>
-                            <h2 style={{ margin: '0 0 5px 0' }}>Human Review</h2>
-                            <div style={{ color: '#666' }}>Review the detected change and decide whether it should be accepted.</div>
+                        <div style={{ marginBottom: '20px', borderBottom: '2px solid #e2e8f0', paddingBottom: '10px' }}>
+                            <h2 style={{ margin: '0 0 5px 0' }}>EVENT REVIEW</h2>
                         </div>
                         
-                        <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', padding: '20px', background: '#fff', border: '1px solid #eaeaea', borderRadius: '8px', marginBottom: '20px' }}>
+                        <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '20px', marginBottom: '30px' }}>
                             <div>
-                                <div style={{ color: '#666', fontSize: '12px' }}>Event</div>
-                                <div style={{ fontSize: '18px', fontWeight: 'bold' }}>{event.event_id}</div>
+                                <div style={{ color: '#64748b', fontSize: '12px', fontWeight: 'bold' }}>Event ID</div>
+                                <div style={{ fontSize: '16px', marginBottom: '15px' }}>{event.event_id}</div>
+                                
+                                <div style={{ color: '#64748b', fontSize: '12px', fontWeight: 'bold' }}>Current Status</div>
+                                <div style={{ fontSize: '16px', fontWeight: 'bold', marginBottom: '15px', color: (reviewStatus?.status || '').includes('ACCEPTED') ? '#16a34a' : (reviewStatus?.status || '').includes('REJECTED') ? '#dc2626' : (reviewStatus?.status || '').includes('UNCERTAIN') ? '#d97706' : '#64748b' }}>
+                                    ● {(reviewStatus?.status || '').replace('_', ' ')}
+                                </div>
                             </div>
                             <div>
-                                <div style={{ color: '#666', fontSize: '12px' }}>Current Status</div>
-                                <div style={{ fontSize: '18px', fontWeight: 'bold', color: reviewStatus.status.includes('Accepted') ? '#16a34a' : reviewStatus.status.includes('Rejected') ? '#dc2626' : '#d97706' }}>
-                                    {reviewStatus.status}
-                                </div>
+                                <div style={{ color: '#64748b', fontSize: '12px', fontWeight: 'bold' }}>AI SEMANTIC INTERPRETATION</div>
+                                <div style={{ fontSize: '16px', marginBottom: '5px' }}>{event.model_info.remoteclip_transition}</div>
+                                <div style={{ fontSize: '14px', color: '#666', marginBottom: '15px' }}>Confidence: {event.metadata.semantic_confidence}</div>
+                                
+                                <div style={{ color: '#64748b', fontSize: '12px', fontWeight: 'bold' }}>DETECTED AREA</div>
+                                <div style={{ fontSize: '16px' }}>{event.metadata.area_m2} m²</div>
                             </div>
                         </div>
                         
-                        <div style={{ display: 'flex', gap: '20px', marginBottom: '20px' }}>
-                            <div style={{ flex: 1, background: '#fff', padding: '15px', border: '1px solid #eaeaea', borderRadius: '8px' }}>
-                                <div style={{ fontWeight: 'bold', marginBottom: '10px', textAlign: 'center' }}>T1 Focused Crop</div>
-                                <img src={API_URL + event.visualization_references.t1_crop} style={{ width: '100%', borderRadius: '4px', border: '1px solid #ccc' }} />
-                            </div>
-                            <div style={{ flex: 1, background: '#fff', padding: '15px', border: '1px solid #eaeaea', borderRadius: '8px' }}>
-                                <div style={{ fontWeight: 'bold', marginBottom: '10px', textAlign: 'center' }}>T2 + Change Overlay</div>
-                                <div style={{ position: 'relative', width: '100%' }}>
-                                    <img src={API_URL + event.visualization_references.t2_crop} style={{ width: '100%', borderRadius: '4px', border: '1px solid #ccc' }} />
-                                    <div style={{ position: 'absolute', top: '15%', left: '15%', width: '70%', height: '70%', border: '2px solid #ff0000', backgroundColor: 'rgba(255,0,0,0.2)' }}></div>
-                                </div>
-                            </div>
-                            <div style={{ flex: 1, background: '#fff', padding: '15px', border: '1px solid #eaeaea', borderRadius: '8px', display: 'flex', flexDirection: 'column', gap: '15px' }}>
-                                <div>
-                                    <div style={{ color: '#666', fontSize: '12px' }}>Change Area</div>
-                                    <div style={{ fontWeight: 'bold' }}>{event.metadata.area_m2} sq m</div>
-                                </div>
-                                <div>
-                                    <div style={{ color: '#666', fontSize: '12px' }}>AI Interpretation</div>
-                                    <div style={{ fontWeight: 'bold', color: '#1d4ed8' }}>{event.model_info.remoteclip_transition}</div>
-                                </div>
-                                <div>
-                                    <div style={{ color: '#666', fontSize: '12px' }}>Semantic Confidence</div>
-                                    <div style={{ fontWeight: 'bold' }}>{event.metadata.semantic_confidence}</div>
-                                </div>
-                                <div>
-                                    <div style={{ color: '#666', fontSize: '12px' }}>Change Probability</div>
-                                    <div style={{ fontWeight: 'bold' }}>{(parseFloat(event.model_info.siamese_probability)*100).toFixed(1)}%</div>
-                                </div>
-                            </div>
+                        <div style={{ marginBottom: '20px', borderBottom: '2px solid #e2e8f0', paddingBottom: '10px' }}>
+                            <h3 style={{ margin: '0' }}>REVIEW DECISION</h3>
                         </div>
-
-                        <div style={{ background: '#fff', padding: '20px', border: '1px solid #eaeaea', borderRadius: '8px' }}>
-                            <h3 style={{ margin: '0 0 15px 0' }}>Human Review Decision <span style={{fontSize:'12px', color:'#999', fontWeight:'normal'}}>(Local Demo Review)</span></h3>
-                            
-                            {!reviewAction ? (
-                                <div style={{ display: 'flex', gap: '15px' }}>
-                                    <button onClick={() => setReviewAction('ACCEPT')} style={{ flex: 1, padding: '12px', background: '#16a34a', color: '#fff', border: 'none', borderRadius: '4px', cursor: 'pointer', fontWeight: 'bold', fontSize: '16px' }}>&#10003; ACCEPT CHANGE</button>
-                                    <button onClick={() => setReviewAction('REJECT')} style={{ flex: 1, padding: '12px', background: '#dc2626', color: '#fff', border: 'none', borderRadius: '4px', cursor: 'pointer', fontWeight: 'bold', fontSize: '16px' }}>&#10005; REJECT CHANGE</button>
-                                    <button onClick={() => setReviewAction('UNCERTAIN')} style={{ flex: 1, padding: '12px', background: '#d97706', color: '#fff', border: 'none', borderRadius: '4px', cursor: 'pointer', fontWeight: 'bold', fontSize: '16px' }}>? MARK UNCERTAIN</button>
-                                </div>
-                            ) : (
-                                <div style={{ background: '#f8fafc', padding: '20px', borderRadius: '8px', border: '1px solid #e2e8f0' }}>
-                                    <h4 style={{ margin: '0 0 10px 0' }}>
-                                        {reviewAction === 'ACCEPT' ? 'Accept this detected change as human-verified?' : reviewAction === 'REJECT' ? 'Why are you rejecting this change?' : 'Reason for marking uncertain'}
-                                    </h4>
-                                    
-                                    {reviewAction !== 'ACCEPT' && (
-                                        <select value={reviewReason} onChange={(e) => setReviewReason(e.target.value)} style={{ width: '100%', padding: '10px', marginBottom: '15px', borderRadius: '4px', border: '1px solid #ccc' }}>
-                                            <option value="">Select a reason...</option>
-                                            {reviewAction === 'REJECT' ? (
-                                                <>
-                                                    <option>Seasonal variation</option>
-                                                    <option>Cloud / shadow artifact</option>
-                                                    <option>Registration issue</option>
-                                                    <option>False spectral response</option>
-                                                    <option>Incorrect semantic interpretation</option>
-                                                    <option>No meaningful change</option>
-                                                    <option>Other</option>
-                                                </>
-                                            ) : (
-                                                <>
-                                                    <option>Insufficient image quality</option>
-                                                    <option>Ambiguous change</option>
-                                                    <option>Mixed land-cover change</option>
-                                                    <option>Possible seasonal effect</option>
-                                                    <option>Needs expert review</option>
-                                                    <option>Other</option>
-                                                </>
-                                            )}
-                                        </select>
-                                    )}
-                                    
+                        
+                        <div style={{ display: 'flex', gap: '15px', marginBottom: '20px' }}>
+                            <button onClick={() => setReviewAction('ACCEPT')} style={{ padding: '10px 20px', background: reviewAction === 'ACCEPT' ? '#16a34a' : '#fff', color: reviewAction === 'ACCEPT' ? '#fff' : '#16a34a', border: '1px solid #16a34a', borderRadius: '4px', cursor: 'pointer', fontWeight: 'bold' }}>✓ Accept Change</button>
+                            <button onClick={() => setReviewAction('REJECT')} style={{ padding: '10px 20px', background: reviewAction === 'REJECT' ? '#dc2626' : '#fff', color: reviewAction === 'REJECT' ? '#fff' : '#dc2626', border: '1px solid #dc2626', borderRadius: '4px', cursor: 'pointer', fontWeight: 'bold' }}>✕ Reject Change</button>
+                            <button onClick={() => setReviewAction('UNCERTAIN')} style={{ padding: '10px 20px', background: reviewAction === 'UNCERTAIN' ? '#d97706' : '#fff', color: reviewAction === 'UNCERTAIN' ? '#fff' : '#d97706', border: '1px solid #d97706', borderRadius: '4px', cursor: 'pointer', fontWeight: 'bold' }}>? Mark Uncertain</button>
+                        </div>
+                        
+                        {reviewAction && (
+                            <div style={{ background: '#f8fafc', padding: '20px', borderRadius: '8px', border: '1px solid #e2e8f0', marginBottom: '30px' }}>
+                                <div style={{ marginBottom: '15px' }}>
+                                    <label style={{ display: 'block', fontWeight: 'bold', marginBottom: '5px' }}>Reason / Notes</label>
                                     <textarea 
-                                        placeholder="Reviewer Notes (Optional)" 
-                                        style={{ width: '100%', padding: '10px', marginBottom: '15px', borderRadius: '4px', border: '1px solid #ccc', minHeight: '80px', fontFamily: 'inherit' }}
-                                    ></textarea>
-                                    
-                                    <div style={{ display: 'flex', gap: '10px' }}>
-                                        <button onClick={() => handleSaveReview(reviewAction)} style={{ padding: '10px 20px', background: reviewAction === 'ACCEPT' ? '#16a34a' : reviewAction === 'REJECT' ? '#dc2626' : '#d97706', color: '#fff', border: 'none', borderRadius: '4px', cursor: 'pointer', fontWeight: 'bold' }}>
-                                            Confirm {reviewAction === 'ACCEPT' ? 'Accept' : reviewAction === 'REJECT' ? 'Reject' : 'Uncertain'}
-                                        </button>
-                                        <button onClick={() => {setReviewAction(null); setReviewReason('');}} style={{ padding: '10px 20px', background: '#fff', color: '#333', border: '1px solid #ccc', borderRadius: '4px', cursor: 'pointer', fontWeight: 'bold' }}>Cancel</button>
-                                    </div>
+                                        value={reviewReason} 
+                                        onChange={(e) => setReviewReason(e.target.value)}
+                                        style={{ width: '100%', padding: '10px', borderRadius: '4px', border: '1px solid #ccc', minHeight: '80px' }}
+                                        placeholder={reviewAction === 'REJECT' ? 'e.g. Seasonal variation, Cloud artifact...' : 'Optional notes...'}
+                                    />
                                 </div>
-                            )}
-                            
-                            {reviewStatus.decision && !reviewAction && (
-                                <div style={{ marginTop: '20px', padding: '15px', background: '#f8fafc', borderRadius: '4px', border: '1px solid #e2e8f0', fontSize: '14px' }}>
-                                    <div style={{ fontWeight: 'bold', marginBottom: '5px' }}>Review History</div>
-                                    <div style={{ display: 'grid', gridTemplateColumns: '100px 1fr', gap: '5px' }}>
-                                        <div style={{ color: '#666' }}>Decision:</div><div>{reviewStatus.status}</div>
-                                        <div style={{ color: '#666' }}>Reviewer:</div><div>{reviewStatus.reviewer}</div>
-                                        <div style={{ color: '#666' }}>Date:</div><div>{new Date(reviewStatus.timestamp).toLocaleString()}</div>
-                                        {reviewStatus.reason && <><div style={{ color: '#666' }}>Reason:</div><div>{reviewStatus.reason}</div></>}
-                                    </div>
+                                <div style={{ display: 'flex', gap: '10px' }}>
+                                    <button onClick={submitReview} style={{ padding: '10px 20px', background: '#2563eb', color: '#fff', border: 'none', borderRadius: '4px', cursor: 'pointer', fontWeight: 'bold' }}>Submit Review</button>
+                                    <button onClick={() => setReviewAction(null)} style={{ padding: '10px 20px', background: '#fff', border: '1px solid #ccc', borderRadius: '4px', cursor: 'pointer' }}>Cancel</button>
                                 </div>
-                            )}
+                            </div>
+                        )}
+                        
+                        <div style={{ marginBottom: '20px', borderBottom: '2px solid #e2e8f0', paddingBottom: '10px' }}>
+                            <h3 style={{ margin: '0' }}>REVIEW HISTORY</h3>
                         </div>
+                        
+                        {(reviewStatus?.status && reviewStatus.status !== 'PENDING') ? (
+                            <div style={{ display: 'flex', flexDirection: 'column', gap: '0' }}>
+                                <div style={{ display: 'flex', gap: '15px' }}>
+                                    <div style={{ display: 'flex', flexDirection: 'column', alignItems: 'center' }}>
+                                        <div style={{ width: '14px', height: '14px', borderRadius: '50%', background: reviewStatus.status.includes('ACCEPTED') ? '#16a34a' : reviewStatus.status.includes('REJECTED') ? '#dc2626' : '#d97706', border: '3px solid #fff', boxShadow: '0 0 0 2px ' + (reviewStatus.status.includes('ACCEPTED') ? '#16a34a' : reviewStatus.status.includes('REJECTED') ? '#dc2626' : '#d97706') }}></div>
+                                        <div style={{ width: '2px', height: '100%', background: '#e2e8f0', margin: '5px 0' }}></div>
+                                    </div>
+                                    <div style={{ paddingBottom: '30px' }}>
+                                        <div style={{ fontWeight: 'bold', fontSize: '16px', color: '#0f172a' }}>{reviewStatus.status}</div>
+                                        <div style={{ fontSize: '13px', color: '#64748b', marginBottom: '5px' }}>{new Date(reviewStatus.created_at || Date.now()).toLocaleString()}</div>
+                                        <div style={{ color: '#475569', fontSize: '14px' }}><span style={{ fontWeight: 'bold' }}>Reviewer:</span> {reviewStatus.reviewer || 'Demo Analyst'}</div>
+                                        {(reviewStatus.reason || reviewStatus.notes) && (
+                                            <div style={{ background: '#f8fafc', padding: '10px', borderRadius: '6px', border: '1px solid #e2e8f0', marginTop: '10px', color: '#334155', fontSize: '14px' }}>
+                                                {reviewStatus.reason || reviewStatus.notes}
+                                            </div>
+                                        )}
+                                    </div>
+                                </div>
+                                <div style={{ display: 'flex', gap: '15px' }}>
+                                    <div style={{ display: 'flex', flexDirection: 'column', alignItems: 'center' }}>
+                                        <div style={{ width: '12px', height: '12px', borderRadius: '50%', background: '#94a3b8' }}></div>
+                                    </div>
+                                    <div>
+                                        <div style={{ fontWeight: 'bold', fontSize: '15px', color: '#64748b' }}>PENDING</div>
+                                        <div style={{ fontSize: '13px', color: '#94a3b8' }}>Initial event generated by ML Pipeline</div>
+                                    </div>
+                                </div>
+                            </div>
+                        ) : (
+                            <div style={{ display: 'flex', gap: '15px' }}>
+                                <div style={{ display: 'flex', flexDirection: 'column', alignItems: 'center' }}>
+                                    <div style={{ width: '12px', height: '12px', borderRadius: '50%', background: '#94a3b8' }}></div>
+                                </div>
+                                <div>
+                                    <div style={{ fontWeight: 'bold', fontSize: '15px', color: '#64748b' }}>PENDING</div>
+                                    <div style={{ fontSize: '13px', color: '#94a3b8' }}>Waiting for human review.</div>
+                                </div>
+                            </div>
+                        )}
+                    </div>
+                );
+            case 'compare':
+                return (
+                    <div style={{ display: 'flex', flexDirection: 'column', height: '100%', background: '#0f172a' }}>
+                        <div style={{ padding: '15px', background: '#1e293b', color: '#fff', borderBottom: '1px solid #334155', display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
+                            <h3 style={{ margin: '0' }}>Compare T1 / T2</h3>
+                            <div style={{ display: 'flex', gap: '15px', fontSize: '13px' }}>
+                                <div><span style={{ color: '#94a3b8' }}>T1:</span> {event.t1_date}</div>
+                                <div><span style={{ color: '#94a3b8' }}>T2:</span> {event.t2_date}</div>
+                            </div>
+                        </div>
+                        <div style={{ flex: 1, display: 'flex', gap: '10px', padding: '10px' }}>
+                            <div style={{ flex: 1, position: 'relative', border: '1px solid #334155', borderRadius: '4px', overflow: 'hidden', background: '#000' }}>
+                                <div style={{ position: 'absolute', top: 10, left: 10, background: 'rgba(0,0,0,0.7)', color: '#fff', padding: '5px 10px', borderRadius: '4px', zIndex: 10 }}>BEFORE (T1)</div>
+                                <div style={{ position: 'absolute', bottom: 10, right: 10, background: 'rgba(0,0,0,0.6)', color: '#fff', padding: '4px 8px', borderRadius: '4px', zIndex: 10, fontSize: '11px' }}>Enhanced for visualization</div>
+                                <img src={API_URL + event.visualization_references.t1_crop} style={{ width: '100%', height: '100%', objectFit: 'contain' }} />
+                            </div>
+                            <div style={{ flex: 1, position: 'relative', border: '1px solid #334155', borderRadius: '4px', overflow: 'hidden', background: '#000' }}>
+                                <div style={{ position: 'absolute', top: 10, left: 10, background: 'rgba(0,0,0,0.7)', color: '#fff', padding: '5px 10px', borderRadius: '4px', zIndex: 10 }}>AFTER (T2)</div>
+                                <div style={{ position: 'absolute', bottom: 10, right: 10, background: 'rgba(0,0,0,0.6)', color: '#fff', padding: '4px 8px', borderRadius: '4px', zIndex: 10, fontSize: '11px' }}>Enhanced for visualization</div>
+                                <img src={API_URL + event.visualization_references.t2_crop} style={{ width: '100%', height: '100%', objectFit: 'contain' }} />
+                                <div style={{ position: 'absolute', top: '15%', left: '15%', width: '70%', height: '70%', border: '2px dashed #ef4444', pointerEvents: 'none' }}></div>
+                            </div>
+                        </div>
+                        <div style={{ padding: '15px', color: '#94a3b8', textAlign: 'center', fontSize: '13px' }}>Images are aligned geographically. The red dotted line indicates the approximate AI detected change region.</div>
                     </div>
                 );
             case 'metadata':
@@ -553,45 +563,51 @@ export default function AnalysisPage() {
         }
     };
 
-    return (
-        <div style={{ display: 'flex', flexDirection: 'column', height: '100vh', fontFamily: 'sans-serif', background: '#f7f8fa' }}>
-            {/* Header */}
-            <header style={{ padding: '15px 20px', background: '#fff', borderBottom: '1px solid #eaeaea', display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
-                <div style={{ display: 'flex', alignItems: 'center', gap: '20px' }}>
-                    <div style={{ fontWeight: 'bold', fontSize: '18px' }}>MiraeNova <span style={{ color: '#666', fontWeight: 'normal' }}>Detailed Event Analysis</span></div>
-                </div>
-                <div style={{ display: 'flex', alignItems: 'center', gap: '20px' }}>
-                    <div style={{ display: 'flex', flexDirection: 'column', alignItems: 'flex-end', marginRight: '20px' }}>
-                        <div style={{ fontWeight: 'bold', fontSize: '16px', color: '#333' }}>{event.event_id}</div>
-                        <div style={{ fontSize: '12px', fontWeight: 'bold', color: reviewStatus.status.includes('Accepted') ? '#16a34a' : reviewStatus.status.includes('Rejected') ? '#dc2626' : '#d97706' }}>{reviewStatus.status}</div>
+        return (
+        <div style={{ display: 'flex', height: '100vh', fontFamily: 'sans-serif', background: '#f8fafc', overflow: 'hidden' }}>
+            <Sidebar />
+            <div style={{ flex: 1, display: 'flex', flexDirection: 'column', overflow: 'hidden' }}>
+                {/* Header */}
+                <header style={{ padding: '15px 25px', background: '#fff', borderBottom: '1px solid #e2e8f0', display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
+                    <div style={{ display: 'flex', alignItems: 'center', gap: '20px' }}>
+                        <div style={{ fontWeight: 'bold', fontSize: '18px', color: '#0f172a' }}>Detailed Event Analysis <span style={{ color: '#64748b', fontWeight: 'normal', fontSize: '14px', marginLeft: '10px' }}>{event.event_id}</span></div>
                     </div>
-                    <button onClick={() => navigate('/dashboard')} style={{ padding: '6px 15px', cursor: 'pointer', background: '#000', color: '#fff', border: 'none', borderRadius: '4px' }}>← Back to Dashboard</button>
-                </div>
-            </header>
-            
-            {/* Workspace */}
-            <div style={{ display: 'flex', flex: 1, overflow: 'hidden' }}>
-                
-                {/* Sidebar */}
-                <div style={{ width: '250px', background: '#fff', borderRight: '1px solid #eaeaea', display: 'flex', flexDirection: 'column' }}>
-                    <div style={{ padding: '20px 15px', fontSize: '12px', fontWeight: 'bold', color: '#94a3b8', letterSpacing: '1px' }}>EVENT ANALYSIS</div>
-                    <div style={{ flex: 1 }}>
-                        <NavButton id="overview" label="Overview" />
-                        <NavButton id="change-map" label="Change Map" />
-                        <NavButton id="before-after" label="Before / After" />
-                        <NavButton id="ai" label="AI Analysis" />
-                        <NavButton id="statistics" label="Statistics" />
-                        <NavButton id="review" label="Review Decision" />
-                        <NavButton id="metadata" label="Metadata" />
+                    <div style={{ display: 'flex', alignItems: 'center', gap: '20px' }}>
+                        
+                        <div style={{ display: 'flex', gap: '10px', marginRight: '20px' }}>
+                            <button onClick={() => navigate(`/analysis/${eventId}/map`)} style={{ padding: '8px 12px', background: '#f8fafc', border: '1px solid #cbd5e1', borderRadius: '4px', cursor: 'pointer', fontWeight: 'bold', color: '#334155' }}>Change Map</button>
+                            <button onClick={() => navigate(`/analysis/${eventId}/compare`)} style={{ padding: '8px 12px', background: '#f8fafc', border: '1px solid #cbd5e1', borderRadius: '4px', cursor: 'pointer', fontWeight: 'bold', color: '#334155' }}>Compare T1/T2</button>
+                            <button onClick={() => navigate(`/analysis/${eventId}/review`)} style={{ padding: '8px 12px', background: '#2563eb', border: 'none', borderRadius: '4px', cursor: 'pointer', fontWeight: 'bold', color: '#fff' }}>Review Decision</button>
+                            <div style={{ position: 'relative' }}>
+                                <button onClick={() => setShowExportMenu(!showExportMenu)} style={{ padding: '8px 15px', background: '#fff', border: '1px solid #cbd5e1', borderRadius: '4px', cursor: 'pointer', fontWeight: 'bold', color: '#334155', display: 'flex', alignItems: 'center', gap: '5px' }}>
+                                    Export ▼
+                                </button>
+                                {showExportMenu && (
+                                    <div style={{ position: 'absolute', top: '100%', right: 0, marginTop: '5px', background: '#fff', border: '1px solid #cbd5e1', borderRadius: '4px', boxShadow: '0 4px 6px -1px rgba(0, 0, 0, 0.1)', zIndex: 1000, width: '160px' }}>
+                                        <div onClick={() => handleExport('pdf')} style={{ padding: '10px 15px', cursor: 'pointer', borderBottom: '1px solid #f1f5f9' }}>PDF Report</div>
+                                        <div onClick={() => handleExport('csv')} style={{ padding: '10px 15px', cursor: 'pointer', borderBottom: '1px solid #f1f5f9' }}>CSV</div>
+                                        <div onClick={() => handleExport('json')} style={{ padding: '10px 15px', cursor: 'pointer', borderBottom: '1px solid #f1f5f9' }}>JSON</div>
+                                        <div onClick={() => handleExport('geojson')} style={{ padding: '10px 15px', cursor: 'pointer', borderBottom: '1px solid #f1f5f9' }}>GeoJSON</div>
+                                        <div onClick={() => handleExport('png')} style={{ padding: '10px 15px', cursor: 'pointer' }}>Visualization</div>
+                                    </div>
+                                )}
+                            </div>
+                        </div>
+                        <div style={{ display: 'flex', flexDirection: 'column', alignItems: 'flex-end', marginRight: '10px' }}>
+
+                            <div style={{ fontSize: '11px', color: '#64748b', textTransform: 'uppercase', fontWeight: 'bold' }}>Review Status</div>
+                            <div style={{ fontSize: '13px', fontWeight: 'bold', color: (reviewStatus?.status || '').includes('Accepted') ? '#16a34a' : (reviewStatus?.status || '').includes('Rejected') ? '#dc2626' : '#d97706' }}>{reviewStatus.status}</div>
+                        </div>
                     </div>
-                </div>
+                </header>
                 
                 {/* Main Content */}
                 <div style={{ flex: 1, overflowY: 'auto' }}>
                     {renderContent()}
                 </div>
-                
             </div>
         </div>
     );
 }
+
+
